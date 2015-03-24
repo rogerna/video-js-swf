@@ -27,8 +27,6 @@ package com.videojs.providers{
         private var _loadErrored:Boolean = false;
         private var _pauseOnStart:Boolean = false;
         private var _pausePending:Boolean = false;
-        private var _onmetadadataFired:Boolean = false;
-
         /**
          * The number of seconds between the logical start of the stream and the current zero
          * playhead position of the NetStream. During normal, file-based playback this value should
@@ -248,13 +246,12 @@ package com.videojs.providers{
         }
         
         public function init(pSrc:Object, pAutoplay:Boolean):void{
-            _onmetadadataFired = false;
             _src = pSrc;
             _loadErrored = false;
             _loadStarted = false;
             _loadCompleted = false;
-            if (_model.preload) {
-              initNetConnection();
+            if(pAutoplay){
+                initNetConnection();
             }
         }
         
@@ -406,7 +403,12 @@ package com.videojs.providers{
 
             if(_throughputTimer)
             {
-                _throughputTimer.reset();
+                try {
+                    _throughputTimer.stop();
+                    _throughputTimer = null;
+                } catch( err: Error ) {
+
+                }
             }
         }
         
@@ -463,7 +465,6 @@ package com.videojs.providers{
             _ns.client = this;
             _ns.bufferTime = .5;
             _ns.play(_src.path);
-            _ns.pause();
             _videoReference.attachNetStream(_ns);
 
             if (_src.path === null) {
@@ -523,9 +524,11 @@ package com.videojs.providers{
                     _loadStartTimestamp = getTimer();
                     _throughputTimer.reset();
                     _throughputTimer.start();
-
-                    if(!_pauseOnStart || _model.autoplay){
-                        _ns.resume();
+                    if(_pauseOnStart && _loadStarted == false){
+                        _ns.pause();
+                        _isPaused = true;
+                    }
+                    else{
                         _model.broadcastEventExternally(ExternalEventName.ON_RESUME);
                         _model.broadcastEvent(new VideoPlaybackEvent(VideoPlaybackEvent.ON_STREAM_START, {info:e.info}));
                     }
@@ -539,6 +542,7 @@ package com.videojs.providers{
                     break;
                 
                 case "NetStream.Buffer.Full":
+                    _model.broadcastEventExternally(ExternalEventName.ON_BUFFER_FULL);
                     _model.broadcastEventExternally(ExternalEventName.ON_CAN_PLAY);
                     _pausedSeekValue = -1;
                     _isPlaying = true;
@@ -627,9 +631,6 @@ package com.videojs.providers{
         }
         
         public function onMetaData(pMetaData:Object):void{
-            if (_onmetadadataFired) {
-              return;
-            }
 
             _metadata = pMetaData;
             if(pMetaData.duration != undefined){
@@ -643,9 +644,6 @@ package com.videojs.providers{
             }
             _model.broadcastEvent(new VideoPlaybackEvent(VideoPlaybackEvent.ON_META_DATA, {metadata:_metadata}));
             _model.broadcastEventExternally(ExternalEventName.ON_METADATA, _metadata);
-
-            _model.broadcastEventExternally(ExternalEventName.ON_BUFFER_FULL);
-            _onmetadadataFired = true;
         }
         
         public function onCuePoint(pInfo:Object):void{
